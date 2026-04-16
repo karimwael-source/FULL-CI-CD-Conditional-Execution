@@ -4,6 +4,9 @@ on:
   push:
 
 jobs:
+  # ── JOB 1: LINTER ──────────────────────────────────────────────────────────
+  # Lightweight check. Runs on EVERY push to EVERY branch.
+  # This is cheap (no GPU). If it fails, train is automatically skipped.
   linter:
     name: Linter Check
     runs-on: ubuntu-latest
@@ -20,11 +23,20 @@ jobs:
       - name: Lightweight syntax check
         run: python -m py_compile train.py
 
+  # ── JOB 2: TRAIN ───────────────────────────────────────────────────────────
+  # The expensive GPU job. Protected by 3 gatekeepers:
+  #   1. needs: linter          → linter job must complete first
+  #   2. needs.linter.result    → linter must have PASSED (not just completed)
+  #   3. github.ref             → only runs on the main branch
+  #   4. contains(...)          → commit message must have [run-train] keyword
   train:
     name: GPU Training
     runs-on: ubuntu-latest
     needs: linter
-    if: ${{ needs.linter.result == 'success' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[run-train]') }}
+    if: >
+      needs.linter.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      contains(github.event.head_commit.message, '[run-train]')
 
     steps:
       - name: Checkout code
@@ -40,22 +52,28 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      # All stdout + stderr is captured into error_logs.txt via `tee`.
+      # This means the file ALWAYS exists after this step runs,
+      # whether training succeeds or fails.
       - name: Run training
-        run: |
-          set -o pipefail
-          if [[ "${{ github.event.head_commit.message }}" == *"[fail-train]"* ]]; then
-            python train.py --fail 2>&1 | tee error_logs.txt
-          else
-            python train.py 2>&1 | tee error_logs.txt
-          fi
+        run: python train.py 2>&1 | tee error_logs.txt
 
+      # ── FAILURE HANDLER ──────────────────────────────────────────────────
+      # Lecture 6 lesson: writing a custom if: disables the hidden success().
+      # Here we WANT failure() — upload logs only when training crashes.
+      # Developer can download the artifact from the GitHub Actions UI
+      # WITHOUT re-running the expensive 2-hour GPU job.
       - name: Upload error logs on failure
-        if: ${{ failure() }}
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: training-error-logs
           path: error_logs.txt
 
-      - name: Cleanup temporary resources
-        if: ${{ always() }}
+      # ── ALWAYS CLEANUP ───────────────────────────────────────────────────
+      # always() = runs regardless of success, failure, or cancellation.
+      # Use case: releasing cloud GPU resources, deleting temp volumes, etc.
+      # Without always(), a failed step above would skip this cleanup step.
+      - name: Cleanup temporary cloud resources
+        if: always()
         run: echo "Cleaning up temporary cloud volumes..."
