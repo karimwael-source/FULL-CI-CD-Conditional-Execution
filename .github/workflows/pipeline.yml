@@ -1,12 +1,9 @@
 name: Conditional Training Pipeline
-
 on:
   push:
 
 jobs:
-  # ── JOB 1: LINTER ──────────────────────────────────────────────────────────
-  # Lightweight check. Runs on EVERY push to EVERY branch.
-  # This is cheap (no GPU). If it fails, train is automatically skipped.
+
   linter:
     name: Linter Check
     runs-on: ubuntu-latest
@@ -23,12 +20,6 @@ jobs:
       - name: Lightweight syntax check
         run: python -m py_compile train.py
 
-  # ── JOB 2: TRAIN ───────────────────────────────────────────────────────────
-  # The expensive GPU job. Protected by 3 gatekeepers:
-  #   1. needs: linter          → linter job must complete first
-  #   2. needs.linter.result    → linter must have PASSED (not just completed)
-  #   3. github.ref             → only runs on the main branch
-  #   4. contains(...)          → commit message must have [run-train] keyword
   train:
     name: GPU Training
     runs-on: ubuntu-latest
@@ -52,19 +43,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # set -o pipefail: makes bash fail if python train.py crashes,
-      # even though the output is piped into tee.
-      # Without this, tee's success exit code hides Python's failure.
       - name: Run training
         run: |
           set -o pipefail
           python train.py 2>&1 | tee error_logs.txt
 
-      # ── FAILURE HANDLER ──────────────────────────────────────────────────
-      # Lecture 6 lesson: writing a custom if: disables the hidden success().
-      # Here we WANT failure() — upload logs only when training crashes.
-      # Developer can download the artifact from the GitHub Actions UI
-      # WITHOUT re-running the expensive 2-hour GPU job.
+
       - name: Upload error logs on failure
         if: failure()
         uses: actions/upload-artifact@v4
@@ -72,13 +56,8 @@ jobs:
           name: training-error-logs
           path: error_logs.txt
 
-      # ── ALWAYS CLEANUP ───────────────────────────────────────────────────
-      # always() = runs regardless of success, failure, or cancellation.
-      # Use case: releasing cloud GPU resources, deleting temp volumes, etc.
-      # Without always(), a failed step above would skip this cleanup step.
+
       - name: Cleanup temporary cloud resources
         if: always()
         run: echo "Cleaning up temporary cloud volumes..."
 
-        # here is the updated code for the cleanup step. In a real pipeline, this would contain actual commands to release cloud resources, such as:
-        # run: |

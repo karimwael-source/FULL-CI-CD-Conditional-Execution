@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 def main() -> None:
-    raise RuntimeError("Forced failure to test artifact upload")  # ADD THIS LINE
+    # raise RuntimeError("Forced failure to test artifact upload")  # ADD THIS LINE
     
     parser = argparse.ArgumentParser(  # existing code continues below...
         description="Dummy training script for CI/CD assignment"
