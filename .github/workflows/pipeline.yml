@@ -52,11 +52,13 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # All stdout + stderr is captured into error_logs.txt via `tee`.
-      # This means the file ALWAYS exists after this step runs,
-      # whether training succeeds or fails.
+      # set -o pipefail: makes bash fail if python train.py crashes,
+      # even though the output is piped into tee.
+      # Without this, tee's success exit code hides Python's failure.
       - name: Run training
-        run: python train.py 2>&1 | tee error_logs.txt
+        run: |
+          set -o pipefail
+          python train.py 2>&1 | tee error_logs.txt
 
       # ── FAILURE HANDLER ──────────────────────────────────────────────────
       # Lecture 6 lesson: writing a custom if: disables the hidden success().
@@ -77,3 +79,6 @@ jobs:
       - name: Cleanup temporary cloud resources
         if: always()
         run: echo "Cleaning up temporary cloud volumes..."
+
+        # here is the updated code for the cleanup step. In a real pipeline, this would contain actual commands to release cloud resources, such as:
+        # run: |
